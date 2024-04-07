@@ -1,4 +1,4 @@
-module github.com/IvanMeln1k/go-bank-app/bank
+module github.com/IvanMeln1k/go-bank-app-bank
 
 go 1.22.1
 
