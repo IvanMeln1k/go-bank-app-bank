@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/IvanMeln1k/go-bank-app/bank/internal/handler"
-	"github.com/IvanMeln1k/go-bank-app/bank/internal/server"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/handler"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/server"
 	"github.com/sirupsen/logrus"
 )
 
