@@ -1,0 +1,639 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Bank
+  description: Bank RestAPI
+servers:
+  - url: "http://localhost:8000"
+paths:
+  /auth/sign-up:
+    post:
+      operationId: signUp
+      tags:
+        - Auth
+      description: Зарегистрироваться в банке
+      requestBody:
+        description: "Необходимо указать данные пользователя: ФИО, почту"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserWithPassword"
+      responses:
+        "200":
+          description: "Пользователь успешно зарегистрирован"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "409":
+          description: "Пользователь с такой почтой уже существует"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/sign-in:
+    post:
+      description: "Получить 2 токена: access и refresh, - для авторизации необходимо подтвердить
+        аккаунт почтой и паролем"
+      operationId: signIn
+      tags:
+        - Auth
+      requestBody:
+        description: "Необходимо ввести адрес электронной почты и пароль от аккаунта"
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthSchema"
+      responses:
+        "200":
+          description: "Успешная авторизация"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tokens
+                properties:
+                  tokens:
+                    $ref: "#/components/schemas/Tokens"
+        "401":
+          description: "Неавторизован (неправильный пароль или почта)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/me:
+    get:
+      operationId: getMe
+      tags:
+        - Auth
+      security:
+        - BearerAuth:
+          - "user"
+      description: Получить данные пользователя
+      responses:
+        "200":
+          description: "Успешно"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: "Не авторизован"
+          content:
+            application/json:
+              schema: 
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/refresh:
+    post:
+      description: "обновить пару токенов"
+      operationId: "refreshTokens"
+      tags:
+        - Auth 
+      parameters:
+        - name: "refreshToken"
+          required: true
+          in: cookie
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Токены обновлены"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tokens
+                properties:
+                  tokens:
+                    $ref: "#/components/schemas/Tokens"
+        "401":
+          description: "Невалидный токен/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/logout:
+    delete:
+      description: "Разлогинивание пользователя"
+      operationId: "logout"
+      tags:
+        - Auth
+      parameters:
+        - name: refreshToken
+          required: true
+          in: cookie
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Успешно разлогинен"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Неавторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/logout-all:
+    delete:
+      description: "Разлогинить пользователя со всех устройств"
+      operationId: "logoutAll"
+      tags:
+        - Auth
+      parameters:
+        - name: refreshToken
+          required: true
+          in: cookie
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Успешно"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Не авторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/accounts:
+    get:
+      description: "Получить все банковские счета"
+      operationId: getAllAccounts
+      tags:
+        - Accounts
+      security:
+        - BearerAuth:
+          - "user"
+      responses:
+        "200":
+          description: "Успешно"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Account"
+        "401":
+          description: "Не авторизован"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+    post:
+      description: "Создать банковский счёт"
+      operationId: createAccount
+      tags:
+        - Accounts
+      security:
+        - BearerAuth:
+          - "user"
+      responses:
+        "200":
+          description: "Счёт успешно создан"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "409":
+          description: "Нельзя создавать более 3 счетов"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Неавторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/accounts/{accountId}:
+    get:
+      tags:
+       - "Accounts"
+      security:
+        - BearerAuth:
+          - "user"
+      description: "Получить данные о счёте"
+      operationId: "getAccountInfo"
+      parameters:
+        - name: "accountId"
+          in: "path"
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "Данные о счёте успешно возвращены"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - account
+                properties:
+                  account:
+                    $ref: "#/components/schemas/Account"
+        "401":
+          description: "Не авторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "404":
+          description: "Счёт не зарегистрирован в банке"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+    delete:
+      tags:
+        - "Accounts"
+      security:
+        - BearerAuth:
+          - "user"
+      description: "Удалить банковский счёт"
+      operationId: "deleteAccount"
+      parameters:
+        - name: "accountId"
+          required: true
+          in: "path"
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "Счёт успешно удалён"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        "404":
+          description: "Счёт не найден"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Неавторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/accounts/{accountId}/transfer:
+    put:
+      tags:
+        - "Accounts"
+      security:
+        - BearerAuth:
+          - "user"
+      operationId: "transfer"
+      description: "Перевести деньги на другой счёт"
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: "Необходимо указать счёт на который нужно перевести деньги и сумму перевода"
+        content:
+          application/json:
+            schema:
+              required:
+                - "amount"
+                - "to"
+              properties:
+                amount:
+                  type: integer
+                  format: int32
+                to:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: "Успешный перевод"
+          content:  
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404": 
+          description: "Счёт не найден"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Не авторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "409":
+          description: "Недостаточно средств"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"  
+  /api/v1/accounts/{accountId}/cashOut:
+    put:
+      tags:
+        - "Machine"
+      security:
+        - BearerAuth:
+          - "machine"
+      operationId: "cashOut"
+      description: "Обналичить деньги со счета (через банкомат)"
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "x-machine-id"
+          in: cookie
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: "Необходимо указать сумму обналичивания"
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - "amount"
+              properties:
+                amount:
+                  type: integer
+                  format: int32
+      responses:
+        "200":
+          description: "Успешное обналичивание"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          description: "Счёт не найден"
+          content: 
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Не авторизован/токен истёк"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "409":
+          description: "Недостаточно средств"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутрення ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/accounts/{accountId}/deposit:
+    put:
+      tags:
+        - "Machine"
+      security:
+        - BearerAuth:
+          - "machine"
+      description: "Положить деньги на счёт (через банкомат)"
+      operationId: "deposit"
+      parameters:
+        - name: "accountId"
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "x-machine-id"
+          in: cookie
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: "Необходимо указать сколько денег положить на счёт"
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: integer
+                  format: int32
+      responses:
+        "200":
+          description: "Деньги успешно положены на счёт"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          description: "Счёт не найден"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Недостаточно прав"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренная ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+components:
+  # securitySchemes:
+  #   BearerAuth:
+  #     type: http
+  #     scheme: bearer
+  #     bearerFormat: JWT
+  schemas:
+    Tokens:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+      properties:
+        accessToken: 
+          type: string
+        refreshToken:
+          type: string
+    Message:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+    AuthSchema:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email: 
+          type: string
+          format: email
+        password:
+          type: string
+    User:
+      type: object
+      required:
+        - id
+        - surname
+        - name
+        - patronyc
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        surname:
+          type: string
+        name:
+          type: string
+        patronyc:
+          type: string
+        email:
+          type: string
+          format: email
+    Account:
+      type: object
+      required:
+        - "id"
+        - "money"
+      properties:
+        id:
+          type: string
+          format: uuid
+        money:  
+          type: integer
+          format: int32
+    UserWithPassword:
+      type: object
+      required:
+        - surname
+        - name
+        - patronyc
+        - email
+        - password
+      properties:
+        surname:
+          type: string
+        name:
+          type: string
+        patronyc:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      
+            
