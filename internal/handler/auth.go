@@ -16,27 +16,6 @@ func (h *Handler) SignIn(ctx context.Context,
 	}, nil
 }
 
-func (h *Handler) RefreshTokens(ctx context.Context,
-	request RefreshTokensRequestObject) (RefreshTokensResponseObject, error) {
-	return RefreshTokens500JSONResponse{
-		Message: "Not implemented",
-	}, nil
-}
-
-func (h *Handler) Logout(ctx context.Context,
-	request LogoutRequestObject) (LogoutResponseObject, error) {
-	return Logout500JSONResponse{
-		Message: "Not implemented",
-	}, nil
-}
-
-func (h *Handler) LogoutAll(ctx context.Context,
-	request LogoutAllRequestObject) (LogoutAllResponseObject, error) {
-	return LogoutAll500JSONResponse{
-		Message: "Not implemented",
-	}, nil
-}
-
 func (h *Handler) GetMe(ctx context.Context,
 	request GetMeRequestObject) (GetMeResponseObject, error) {
 	return GetMe500JSONResponse{

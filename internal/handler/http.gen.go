@@ -43,12 +43,6 @@ type Message struct {
 	Message string `json:"message"`
 }
 
-// Tokens defines model for Tokens.
-type Tokens struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-}
-
 // User defines model for User.
 type User struct {
 	Email    openapi_types.Email `json:"email"`
@@ -56,6 +50,7 @@ type User struct {
 	Name     string              `json:"name"`
 	Patronyc string              `json:"patronyc"`
 	Surname  string              `json:"surname"`
+	Verified bool                `json:"verified"`
 }
 
 // UserWithPassword defines model for UserWithPassword.
@@ -74,7 +69,7 @@ type CashOutJSONBody struct {
 
 // CashOutParams defines parameters for CashOut.
 type CashOutParams struct {
-	XMachineId openapi_types.UUID `form:"x-machine-id" json:"x-machine-id"`
+	XMachineToken string `form:"x-machine-token" json:"x-machine-token"`
 }
 
 // DepositJSONBody defines parameters for Deposit.
@@ -84,28 +79,13 @@ type DepositJSONBody struct {
 
 // DepositParams defines parameters for Deposit.
 type DepositParams struct {
-	XMachineId openapi_types.UUID `form:"x-machine-id" json:"x-machine-id"`
+	XMachineId string `form:"x-machine-id" json:"x-machine-id"`
 }
 
 // TransferJSONBody defines parameters for Transfer.
 type TransferJSONBody struct {
 	Amount int32              `json:"amount"`
 	To     openapi_types.UUID `json:"to"`
-}
-
-// LogoutParams defines parameters for Logout.
-type LogoutParams struct {
-	RefreshToken string `form:"refreshToken" json:"refreshToken"`
-}
-
-// LogoutAllParams defines parameters for LogoutAll.
-type LogoutAllParams struct {
-	RefreshToken string `form:"refreshToken" json:"refreshToken"`
-}
-
-// RefreshTokensParams defines parameters for RefreshTokens.
-type RefreshTokensParams struct {
-	RefreshToken string `form:"refreshToken" json:"refreshToken"`
 }
 
 // CashOutJSONRequestBody defines body for CashOut for application/json ContentType.
@@ -147,17 +127,8 @@ type ServerInterface interface {
 	// (PUT /api/v1/accounts/{accountId}/transfer)
 	Transfer(ctx echo.Context, accountId openapi_types.UUID) error
 
-	// (DELETE /auth/logout)
-	Logout(ctx echo.Context, params LogoutParams) error
-
-	// (DELETE /auth/logout-all)
-	LogoutAll(ctx echo.Context, params LogoutAllParams) error
-
 	// (GET /auth/me)
 	GetMe(ctx echo.Context) error
-
-	// (POST /auth/refresh)
-	RefreshTokens(ctx echo.Context, params RefreshTokensParams) error
 
 	// (POST /auth/sign-in)
 	SignIn(ctx echo.Context) error
@@ -245,17 +216,17 @@ func (w *ServerInterfaceWrapper) CashOut(ctx echo.Context) error {
 	// Parameter object where we will unmarshal all parameters from the context
 	var params CashOutParams
 
-	if cookie, err := ctx.Cookie("x-machine-id"); err == nil {
+	if cookie, err := ctx.Cookie("x-machine-token"); err == nil {
 
-		var value openapi_types.UUID
-		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-id", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
+		var value string
+		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-token", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-id: %s", err))
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-token: %s", err))
 		}
-		params.XMachineId = value
+		params.XMachineToken = value
 
 	} else {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument x-machine-id is required, but not found"))
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument x-machine-token is required, but not found"))
 	}
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -281,7 +252,7 @@ func (w *ServerInterfaceWrapper) Deposit(ctx echo.Context) error {
 
 	if cookie, err := ctx.Cookie("x-machine-id"); err == nil {
 
-		var value openapi_types.UUID
+		var value string
 		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-id", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-id: %s", err))
@@ -315,56 +286,6 @@ func (w *ServerInterfaceWrapper) Transfer(ctx echo.Context) error {
 	return err
 }
 
-// Logout converts echo context to params.
-func (w *ServerInterfaceWrapper) Logout(ctx echo.Context) error {
-	var err error
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params LogoutParams
-
-	if cookie, err := ctx.Cookie("refreshToken"); err == nil {
-
-		var value string
-		err = runtime.BindStyledParameterWithOptions("simple", "refreshToken", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter refreshToken: %s", err))
-		}
-		params.RefreshToken = value
-
-	} else {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument refreshToken is required, but not found"))
-	}
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.Logout(ctx, params)
-	return err
-}
-
-// LogoutAll converts echo context to params.
-func (w *ServerInterfaceWrapper) LogoutAll(ctx echo.Context) error {
-	var err error
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params LogoutAllParams
-
-	if cookie, err := ctx.Cookie("refreshToken"); err == nil {
-
-		var value string
-		err = runtime.BindStyledParameterWithOptions("simple", "refreshToken", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter refreshToken: %s", err))
-		}
-		params.RefreshToken = value
-
-	} else {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument refreshToken is required, but not found"))
-	}
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.LogoutAll(ctx, params)
-	return err
-}
-
 // GetMe converts echo context to params.
 func (w *ServerInterfaceWrapper) GetMe(ctx echo.Context) error {
 	var err error
@@ -373,31 +294,6 @@ func (w *ServerInterfaceWrapper) GetMe(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetMe(ctx)
-	return err
-}
-
-// RefreshTokens converts echo context to params.
-func (w *ServerInterfaceWrapper) RefreshTokens(ctx echo.Context) error {
-	var err error
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RefreshTokensParams
-
-	if cookie, err := ctx.Cookie("refreshToken"); err == nil {
-
-		var value string
-		err = runtime.BindStyledParameterWithOptions("simple", "refreshToken", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter refreshToken: %s", err))
-		}
-		params.RefreshToken = value
-
-	} else {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument refreshToken is required, but not found"))
-	}
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.RefreshTokens(ctx, params)
 	return err
 }
 
@@ -454,10 +350,7 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.PUT(baseURL+"/api/v1/accounts/:accountId/cashOut", wrapper.CashOut)
 	router.PUT(baseURL+"/api/v1/accounts/:accountId/deposit", wrapper.Deposit)
 	router.PUT(baseURL+"/api/v1/accounts/:accountId/transfer", wrapper.Transfer)
-	router.DELETE(baseURL+"/auth/logout", wrapper.Logout)
-	router.DELETE(baseURL+"/auth/logout-all", wrapper.LogoutAll)
 	router.GET(baseURL+"/auth/me", wrapper.GetMe)
-	router.POST(baseURL+"/auth/refresh", wrapper.RefreshTokens)
 	router.POST(baseURL+"/auth/sign-in", wrapper.SignIn)
 	router.POST(baseURL+"/auth/sign-up", wrapper.SignUp)
 
@@ -789,76 +682,6 @@ func (response Transfer500JSONResponse) VisitTransferResponse(w http.ResponseWri
 	return json.NewEncoder(w).Encode(response)
 }
 
-type LogoutRequestObject struct {
-	Params LogoutParams
-}
-
-type LogoutResponseObject interface {
-	VisitLogoutResponse(w http.ResponseWriter) error
-}
-
-type Logout200JSONResponse Message
-
-func (response Logout200JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Logout401JSONResponse Message
-
-func (response Logout401JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Logout500JSONResponse Message
-
-func (response Logout500JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type LogoutAllRequestObject struct {
-	Params LogoutAllParams
-}
-
-type LogoutAllResponseObject interface {
-	VisitLogoutAllResponse(w http.ResponseWriter) error
-}
-
-type LogoutAll200JSONResponse Message
-
-func (response LogoutAll200JSONResponse) VisitLogoutAllResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type LogoutAll401JSONResponse Message
-
-func (response LogoutAll401JSONResponse) VisitLogoutAllResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type LogoutAll500JSONResponse Message
-
-func (response LogoutAll500JSONResponse) VisitLogoutAllResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 type GetMeRequestObject struct {
 }
 
@@ -895,43 +718,6 @@ func (response GetMe500JSONResponse) VisitGetMeResponse(w http.ResponseWriter) e
 	return json.NewEncoder(w).Encode(response)
 }
 
-type RefreshTokensRequestObject struct {
-	Params RefreshTokensParams
-}
-
-type RefreshTokensResponseObject interface {
-	VisitRefreshTokensResponse(w http.ResponseWriter) error
-}
-
-type RefreshTokens200JSONResponse struct {
-	Tokens Tokens `json:"tokens"`
-}
-
-func (response RefreshTokens200JSONResponse) VisitRefreshTokensResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RefreshTokens401JSONResponse Message
-
-func (response RefreshTokens401JSONResponse) VisitRefreshTokensResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RefreshTokens500JSONResponse Message
-
-func (response RefreshTokens500JSONResponse) VisitRefreshTokensResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 type SignInRequestObject struct {
 	Body *SignInJSONRequestBody
 }
@@ -941,7 +727,7 @@ type SignInResponseObject interface {
 }
 
 type SignIn200JSONResponse struct {
-	Tokens Tokens `json:"tokens"`
+	Token string `json:"token"`
 }
 
 func (response SignIn200JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
@@ -1028,17 +814,8 @@ type StrictServerInterface interface {
 	// (PUT /api/v1/accounts/{accountId}/transfer)
 	Transfer(ctx context.Context, request TransferRequestObject) (TransferResponseObject, error)
 
-	// (DELETE /auth/logout)
-	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
-
-	// (DELETE /auth/logout-all)
-	LogoutAll(ctx context.Context, request LogoutAllRequestObject) (LogoutAllResponseObject, error)
-
 	// (GET /auth/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
-
-	// (POST /auth/refresh)
-	RefreshTokens(ctx context.Context, request RefreshTokensRequestObject) (RefreshTokensResponseObject, error)
 
 	// (POST /auth/sign-in)
 	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
@@ -1250,56 +1027,6 @@ func (sh *strictHandler) Transfer(ctx echo.Context, accountId openapi_types.UUID
 	return nil
 }
 
-// Logout operation middleware
-func (sh *strictHandler) Logout(ctx echo.Context, params LogoutParams) error {
-	var request LogoutRequestObject
-
-	request.Params = params
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.Logout(ctx.Request().Context(), request.(LogoutRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "Logout")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(LogoutResponseObject); ok {
-		return validResponse.VisitLogoutResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// LogoutAll operation middleware
-func (sh *strictHandler) LogoutAll(ctx echo.Context, params LogoutAllParams) error {
-	var request LogoutAllRequestObject
-
-	request.Params = params
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.LogoutAll(ctx.Request().Context(), request.(LogoutAllRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "LogoutAll")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(LogoutAllResponseObject); ok {
-		return validResponse.VisitLogoutAllResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(ctx echo.Context) error {
 	var request GetMeRequestObject
@@ -1317,31 +1044,6 @@ func (sh *strictHandler) GetMe(ctx echo.Context) error {
 		return err
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		return validResponse.VisitGetMeResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// RefreshTokens operation middleware
-func (sh *strictHandler) RefreshTokens(ctx echo.Context, params RefreshTokensParams) error {
-	var request RefreshTokensRequestObject
-
-	request.Params = params
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.RefreshTokens(ctx.Request().Context(), request.(RefreshTokensRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RefreshTokens")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(RefreshTokensResponseObject); ok {
-		return validResponse.VisitRefreshTokensResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
@@ -1409,38 +1111,35 @@ func (sh *strictHandler) SignUp(ctx echo.Context) error {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xa3W7byBV+FWLai11AXinJFmh153SBhYEGXewm6EXgC5YaS0wkkuEM0xqGAMtCmgR2",
-	"YaQI0N40aZo+AK1IsSxb9CuceaPizPBPIiXLtizLiW9sgRzOnDnnO9/5mdkiht1wbItanJHyFmFGjTZ0",
-	"+XPVMGzP4vjTcW2Hutyk8oVZwb8bttvQOSkTzzMrpED4pkNJmTDumlaVNAukYVt0c2SkafF7d5OhpsVp",
-	"lbqk2SwQlz7zTJdWSPkxkdOpr9fjwfafn1CD47yrHq/9IsXMikYbulkfWVM9yRHP0Rn7i+3KvYy9HJMn",
-	"miL+Ik+qB5QxvUqzIjWSF9OXiQbmzf7Qfkotlp1cNwzKmHybswDOv+FSVps0YEyC9Gxj3+YJ9YhR91Im",
-	"mBFIlt6gubtzdO7a1qaR+5J57oQP8+AWjQ5XS81dCOWfpIE/mbz2UwpLF9bGlG1OROq8dHD29qfCH6cz",
-	"rQ0bF6pQZrimw03bImVyX7eeaj9Txld/WsNNm7xOw8ekQJ5Tl6lxd74rfVdCkW2HWrpjkjK5Jx9JUWpS",
-	"l0XdMYvP7xR1RUzyWZXy7KLwHgI4Fm3xEvpiR+xp0BEt6GlwAD4MYQCBfDCAPvQ00RIvoSd2wCdydVfH",
-	"WdYqpEx+pHy1Xl+NlkOVMce2mDLt3VIJ/xm2xamiSd1x6qYhvy8+YbaVEGqu58abMDltyB+/dukGKZNf",
-	"FRNSLoaMXIzouBlrX3ddfVOaMsccYxr5KFpwCj3xCoYQ4Bzfl+6cS/ppokXcl7fwv1HvPnTEDgRiG/pw",
-	"iNpHO6AUvzmnDi8qxT9gKNpiR2xDD4YwFPtiX4NAvII+HMAAfA3xIbahI//6UqmMGp5r8k1SfrxF7lPd",
-	"pS6GHnQXD5lvvYmOoFcZPolBso4+abM8VH6AAA6hC77CZBaMRxKM4o3YyUDx9y7VOY0wcEkkzgSzHC1+",
-	"UMJpop1GE+ou3Jgy6gKhlY+sIj6CAdpag75oiR3xBgZKtN8tTLRjsQeHYj+tnk5i+wCOoQc97V5CQAF0",
-	"vlSfaBYy7F3cCn+tVZrKWeqU0xy3+ShVdxxR+bnc5gc5aeI2ju7qDcqpy+QOTFwA40sU+MokFoqkIyR3",
-	"PVpI6fyMnAW1MMdYwbjOPZYfxc+m/kle21Z6FW9ugNd+vxDRIk3BEIPWEHw4gi7K8+WGqhnzJ8ntMBS7",
-	"qJgg9jfo5eZMoQthQnhTXU5Pit/ZomWmkpLP12dx0LeTlDvustCRkaSDdhevER9id96uOy3+T87lls13",
-	"D8GXDvQpFGYb+mI7ElaDThJGel9pyC0aOqv90VPtHS+PBN7BgeRAjLwpIkDU7aFiZWKTKp+0b+Qv3Nth",
-	"OkyfYNLzbTajDddfHEMUwrkN235q0mT2v640dKNmWnTFnAMFPfMo4/ftyuZl2KcRkc95e2fhlzPxDkbi",
-	"AA7ECwigC304UVnBAHzpP2hv0RJtOIET0dZwaBoPypegL/ZVo+mK6pFp7jRS1EryzBdROfn1V7xLnuEs",
-	"sjjqQoD7R5hBIF6GdaQkj658cb2l0GVYOSSTUWJ+ED88i5cr1LGZOYWXZXIGAXzO42S0aZxBnJORfwhX",
-	"vmXkpWZkacJjsYf/Q+NjpqPB6Tgw0li4NpJ+m84YxvLZRGKZy2YlXmRRmkdJcIoer8joa65Cwb9WTuSu",
-	"brGN8LRpAikqnkN50Ij9HFqErtgWbfgEwbSW0cNorQWXrgtmqQLh9kwUnUdm8uP1i+eUMcB9DVlMZUpi",
-	"F440hB18jthhuk37I+lpMhpX9q+U7+TJ5xkZqdrOiFS3WehtFrpM3QGP14p1u2pHjDqhAf8f6bwYpz9B",
-	"X9ZTcV0VhnCxF8FL7MiTj/0Mrf5BrZNPquP538jVg2nMOu8m4FwqUU3mDGmN9Za+xb7MGI/hi8DOQHdF",
-	"r9fPB1+VHE8ArupqqQsD4oXMWKW4ARyFjJCP7NV6/asA97LHsJsIZHVD5yJHMbOy74+UP6DzvcDihbe/",
-	"ZsiTRnNIFZduL60sQT4whsOQmaSt86+wqAYr6iJmUR+LKi3xR3mNYRx/P6c4jy07T47inMdXL6fZMdzZ",
-	"ONbDj2dC+38jDYpdLaXo46s55zsrf+ioNjp0w0omMfCXxb3MrForpjUF8+MMfDcNdr+sqVuzWI6GiC1o",
-	"K0jTmEyMkYgv/gZ91Y7IlsmSzLuYYkixu5GL+TDATYk2DLFmOsVKRUpwhGsqDwyvE51kHO8Xs2qtRe5z",
-	"kQbD1LPi5Cb2rL0A6KTLeR+6aETR0sTf5QYGYa41lOA/ineLLpHeK+olQG2MKGcOVf81+X460vkTcKMO",
-	"2q69htC+kegNG6PQl/lH3O1I2aeP/JHg1f/2RlOE50yhiH9Ovm6APixauPrIpYM8P33kXJGfZq6pX7Bz",
-	"N1PuWdbgf/AveFdInLedCd/XdRjxPlfmvczBxNT7I4vsUk0UuIVRyJdnQUejQUE2UOW99rZ4HXJtR7Sh",
-	"p45UbpIHyoTWfR6liZ5bJ2VS49wpF4t129DrNZvx8m9LpRJprjf/HwAA//9yrBSkzDQAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

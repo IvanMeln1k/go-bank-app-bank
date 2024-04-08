@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type HasherInterfaca interface {
+type HasherInterface interface {
 	Hash(password string) string
 	Check(password string, hash string) bool
 }

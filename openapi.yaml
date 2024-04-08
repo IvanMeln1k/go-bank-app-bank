@@ -59,10 +59,10 @@ paths:
               schema:
                 type: object
                 required:
-                  - tokens
+                  - token
                 properties:
-                  tokens:
-                    $ref: "#/components/schemas/Tokens"
+                  token:
+                    type: string
         "401":
           description: "Неавторизован (неправильный пароль или почта)"
           content:
@@ -101,104 +101,6 @@ paths:
           content:
             application/json:
               schema: 
-                $ref: "#/components/schemas/Message"
-        "500":
-          description: "Внутренняя ошибка сервера"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-  /auth/refresh:
-    post:
-      description: "обновить пару токенов"
-      operationId: "refreshTokens"
-      tags:
-        - Auth 
-      parameters:
-        - name: "refreshToken"
-          required: true
-          in: cookie
-          schema:
-            type: string
-      responses:
-        "200":
-          description: "Токены обновлены"
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - tokens
-                properties:
-                  tokens:
-                    $ref: "#/components/schemas/Tokens"
-        "401":
-          description: "Невалидный токен/токен истёк"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-        "500":
-          description: "Внутренняя ошибка сервера"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-  /auth/logout:
-    delete:
-      description: "Разлогинивание пользователя"
-      operationId: "logout"
-      tags:
-        - Auth
-      parameters:
-        - name: refreshToken
-          required: true
-          in: cookie
-          schema:
-            type: string
-      responses:
-        "200":
-          description: "Успешно разлогинен"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-        "401":
-          description: "Неавторизован/токен истёк"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-        "500":
-          description: "Внутренняя ошибка сервера"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-  /auth/logout-all:
-    delete:
-      description: "Разлогинить пользователя со всех устройств"
-      operationId: "logoutAll"
-      tags:
-        - Auth
-      parameters:
-        - name: refreshToken
-          required: true
-          in: cookie
-          schema:
-            type: string
-      responses:
-        "200":
-          description: "Успешно"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-        "401":
-          description: "Не авторизован/токен истёк"
-          content:
-            application/json:
-              schema:
                 $ref: "#/components/schemas/Message"
         "500":
           description: "Внутренняя ошибка сервера"
@@ -439,12 +341,11 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: "x-machine-id"
+        - name: "x-machine-token"
           in: cookie
           required: true
           schema:
             type: string
-            format: uuid
       requestBody:
         description: "Необходимо указать сумму обналичивания"
         content:
@@ -509,7 +410,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       requestBody:
         description: "Необходимо указать сколько денег положить на счёт"
         content:
@@ -554,16 +454,6 @@ components:
   #     scheme: bearer
   #     bearerFormat: JWT
   schemas:
-    Tokens:
-      type: object
-      required:
-        - accessToken
-        - refreshToken
-      properties:
-        accessToken: 
-          type: string
-        refreshToken:
-          type: string
     Message:
       type: object
       required:
@@ -590,6 +480,7 @@ components:
         - name
         - patronyc
         - email
+        - verified
       properties:
         id:
           type: string
@@ -603,6 +494,8 @@ components:
         email:
           type: string
           format: email
+        verified:
+          type: boolean
     Account:
       type: object
       required:
