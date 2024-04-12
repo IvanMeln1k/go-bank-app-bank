@@ -6,19 +6,22 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/IvanMeln1k/go-bank-app-bank/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/pkg/transactions"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 )
 
 type MachinesRepository struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	CtxGetter transactions.CtxGetterInterface
 }
 
-func NewMachinesRepository(db *sqlx.DB) *MachinesRepository {
+func NewMachinesRepository(db *sqlx.DB, CtxGetter transactions.CtxGetterInterface) *MachinesRepository {
 	return &MachinesRepository{
-		db: db,
+		db:        db,
+		CtxGetter: CtxGetter,
 	}
 }
 

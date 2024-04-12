@@ -7,29 +7,33 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/IvanMeln1k/go-bank-app-bank/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/pkg/transactions"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/sirupsen/logrus"
 )
 
 type AccountRepository struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	ctxGetter transactions.CtxGetterInterface
 }
 
-func NewAccountsRepository(db *sqlx.DB) *AccountRepository {
+func NewAccountsRepository(db *sqlx.DB, ctxGetter transactions.CtxGetterInterface) *AccountRepository {
 	return &AccountRepository{
-		db: db,
+		db:        db,
+		ctxGetter: ctxGetter,
 	}
 }
 
 func (r *AccountRepository) Create(ctx context.Context, userId uuid.UUID,
 	account domain.Account) (uuid.UUID, error) {
 	var id uuid.UUID
+	tx := r.ctxGetter.TrOrDb(ctx, r.db)
 
-	query := fmt.Sprintf(`INSERT INTO %s a (id, money, user_id) VALUES
-		((SELECT gen_random_uuid()), $1, $2) RETURNING a.id`, accountsTable)
-	row := r.db.QueryRow(query)
+	query := fmt.Sprintf(`INSERT INTO %s (id, money, user_id) VALUES
+		((SELECT gen_random_uuid()), $1, $2) RETURNING id`, accountsTable)
+	row := tx.QueryRowxContext(ctx, query, account.Money, account.UserId)
 	if err := row.Scan(&id); err != nil {
 		logrus.Errorf("error insert into db account: %s", err)
 		return id, ErrInternal
@@ -69,8 +73,10 @@ func (r *AccountRepository) GetAll(ctx context.Context, userId uuid.UUID) ([]dom
 }
 
 func (r *AccountRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	tx := r.ctxGetter.TrOrDb(ctx, r.db)
+
 	query := fmt.Sprintf(`DELETE FROM %s a WHERE id=$1`, accountsTable)
-	if _, err := r.db.Exec(query); err != nil {
+	if _, err := tx.ExecContext(ctx, query, id); err != nil {
 		logrus.Errorf("error delete account from db by id: %s", err)
 		return ErrInternal
 	}
@@ -80,6 +86,8 @@ func (r *AccountRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (r *AccountRepository) Update(ctx context.Context, id uuid.UUID,
 	data domain.AccountUpdate) (domain.Account, error) {
+	tx := r.ctxGetter.TrOrDb(ctx, r.db)
+
 	var account domain.Account
 
 	values := []interface{}{}
@@ -100,7 +108,8 @@ func (r *AccountRepository) Update(ctx context.Context, id uuid.UUID,
 	setQuery := strings.Join(names, ", ")
 	query := fmt.Sprintf(`UPDATE %s a SET %s WHERE id=$%d RETURNING a.*`,
 		accountsTable, setQuery, argId)
-	if err := r.db.Get(&account, query, values...); err != nil {
+	row := tx.QueryRowxContext(ctx, query, values...)
+	if err := row.StructScan(&account); err != nil {
 		logrus.Errorf("error update account into db by id: %s", err)
 		return account, ErrInternal
 	}

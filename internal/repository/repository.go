@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/IvanMeln1k/go-bank-app-bank/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/pkg/transactions"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -50,13 +51,14 @@ type Repository struct {
 }
 
 type Deps struct {
-	DB *sqlx.DB
+	DB        *sqlx.DB
+	CtxGetter transactions.CtxGetterInterface
 }
 
 func NewRepository(deps Deps) *Repository {
 	return &Repository{
-		Users:    NewUsersRepository(deps.DB),
-		Accounts: NewAccountsRepository(deps.DB),
-		Machines: NewMachinesRepository(deps.DB),
+		Users:    NewUsersRepository(deps.DB, deps.CtxGetter),
+		Accounts: NewAccountsRepository(deps.DB, deps.CtxGetter),
+		Machines: NewMachinesRepository(deps.DB, deps.CtxGetter),
 	}
 }

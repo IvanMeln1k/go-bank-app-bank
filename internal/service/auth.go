@@ -2,32 +2,38 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
-	"github.com/IvanMeln1k/go-bank-app-bank/domain"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/broker"
+	"github.com/IvanMeln1k/go-bank-app-bank/internal/domain"
 	"github.com/IvanMeln1k/go-bank-app-bank/internal/repository"
 	"github.com/IvanMeln1k/go-bank-app-bank/pkg/hasher"
 	"github.com/IvanMeln1k/go-bank-app-bank/pkg/tokens"
+	"github.com/IvanMeln1k/go-bank-app-bank/pkg/transactions"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
 
 type AuthService struct {
-	usersRepo    repository.Users
-	rdb          *redis.Client
-	tokenManager tokens.TokenManagerInterface
-	hasher       hasher.HasherInterface
+	usersRepo          repository.Users
+	rdb                *redis.Client
+	tokenManager       tokens.TokenManagerInterface
+	hasher             hasher.HasherInterface
+	transactionManager transactions.ManagerInterface
+	broker             broker.BrokerInterface
 }
 
 func NewAuthService(usersRepo repository.Users, rdb *redis.Client,
-	tokenManager tokens.TokenManagerInterface, hasher hasher.HasherInterface) *AuthService {
+	tokenManager tokens.TokenManagerInterface, hasher hasher.HasherInterface,
+	transactionManager transactions.ManagerInterface, broker broker.BrokerInterface) *AuthService {
 	return &AuthService{
-		usersRepo:    usersRepo,
-		rdb:          rdb,
-		tokenManager: tokenManager,
-		hasher:       hasher,
+		usersRepo:          usersRepo,
+		rdb:                rdb,
+		tokenManager:       tokenManager,
+		hasher:             hasher,
+		transactionManager: transactionManager,
+		broker:             broker,
 	}
 }
 
@@ -36,22 +42,14 @@ type SendEmailVerificationMessageTask struct {
 }
 
 func (s *AuthService) writeTaskSendEmailVerificationMessage(ctx context.Context, email string) error {
-	data, err := json.Marshal(SendEmailVerificationMessageTask{
-		Email: email,
-	})
+	err := s.broker.WriteVerificationTask(ctx, email)
 	if err != nil {
-		logrus.Errorf("error marshaling json send email verification task: %s", err)
 		return ErrInternal
-	}
-	_, err = s.rdb.RPush(ctx, "queue:verification:email", data).Result()
-	if err != nil {
-		logrus.Errorf("error write task send email verification message into broker: %s", err)
 	}
 	return nil
 }
 
-func (s *AuthService) SendEmailVerificationMessage(ctx context.Context, id uuid.UUID,
-	email string) error {
+func (s *AuthService) SendEmailVerificationMessage(ctx context.Context, id uuid.UUID) error {
 	user, err := s.usersRepo.Get(ctx, id)
 	if err != nil {
 		logrus.Errorf("error getting user from users repo when sending email verification message: %s", err)
@@ -61,21 +59,21 @@ func (s *AuthService) SendEmailVerificationMessage(ctx context.Context, id uuid.
 		return ErrInternal
 	}
 	if user.Verified {
-		return ErrUserNotFound
+		return ErrEmailAlreadyVerified
 	}
-	return s.writeTaskSendEmailVerificationMessage(ctx, email)
+	return s.writeTaskSendEmailVerificationMessage(ctx, user.Email)
 }
 
 func (s *AuthService) SignUp(ctx context.Context, user domain.User) (uuid.UUID, error) {
 	var id uuid.UUID
 	_, err := s.usersRepo.GetByEmail(ctx, user.Email)
-	if err == nil {
-		logrus.Errorf("email already in use: %s", err)
-		return id, ErrEmailAlreadyInUse
-	}
 	if err != nil && !errors.Is(repository.ErrUserNotFound, err) {
 		logrus.Errorf("error getting user from users repo when signup: %s", err)
 		return id, ErrInternal
+	}
+	if err == nil {
+		logrus.Errorf("email already in use: %s", err)
+		return id, ErrEmailAlreadyInUse
 	}
 
 	user.Password = s.hasher.Hash(user.Password)
@@ -95,7 +93,7 @@ func (s *AuthService) SignIn(ctx context.Context, email string, password string)
 	if err != nil {
 		logrus.Errorf("error getting user from repo by email when signing in: %s", err)
 		if errors.Is(repository.ErrUserNotFound, err) {
-			return "", nil
+			return "", ErrInvalidEmailOrPassword
 		}
 		return "", ErrInternal
 	}
@@ -152,4 +150,17 @@ func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
 	}
 
 	return nil
+}
+
+func (s *AuthService) Get(ctx context.Context, id uuid.UUID) (domain.User, error) {
+	user, err := s.usersRepo.Get(ctx, id)
+	if err != nil {
+		logrus.Errorf("error getting user from users repo when getting (auth service): %s", err)
+		if errors.Is(repository.ErrUserNotFound, err) {
+			return user, ErrUserNotFound
+		}
+		return user, ErrInternal
+	}
+
+	return user, nil
 }

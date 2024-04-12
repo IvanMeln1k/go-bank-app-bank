@@ -25,7 +25,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Message"
+                $ref: "#/components/schemas/ReturnId"
         "409":
           description: "Пользователь с такой почтой уже существует"
           content:
@@ -40,8 +40,7 @@ paths:
                 $ref: "#/components/schemas/Message"
   /auth/sign-in:
     post:
-      description: "Получить 2 токена: access и refresh, - для авторизации необходимо подтвердить
-        аккаунт почтой и паролем"
+      description: "Получить access токен"
       operationId: signIn
       tags:
         - Auth
@@ -57,12 +56,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - token
-                properties:
-                  token:
-                    type: string
+                $ref: "#/components/schemas/ReturnToken"
         "401":
           description: "Неавторизован (неправильный пароль или почта)"
           content:
@@ -108,6 +102,76 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+  /auth/verify-email:
+    get:
+      operationId: verifyEmail
+      tags:
+       - Auth
+      description: Верифицировать почту
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Успешно"
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user
+                properties:
+                  user:
+                    $ref: "#/components/schemas/Message"
+        "401":
+          description: "Не авторизован"
+          content:
+            application/json:
+              schema: 
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /auth/resend-verify:
+    "post":
+      description: "Переотправить письмо верификации почты"
+      operationId: "resendVerify"
+      security:
+        - BearerAuth:
+          - user
+      tags:
+        - Auth
+      responses:
+        "200":
+          description: "Все ок"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          description: "Не авторизован"
+          content:
+            application/json:
+              schema: 
+                $ref: "#/components/schemas/Message"
+        "409":
+          description: "Уже авторизован"
+          content:
+            application/json:
+              schema: 
+                $ref: "#/components/schemas/Message"
+        "500":
+          description: "Внутренняя ошибка сервера"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
   /api/v1/accounts:
     get:
       description: "Получить все банковские счета"
@@ -135,6 +199,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+        "404":
+          description: "Пользователь не найден"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
         "500":
           description: "Внутренняя ошибка сервера"
           content:
@@ -155,9 +225,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Account"
+                $ref: "#/components/schemas/ReturnId"
         "409":
           description: "Нельзя создавать более 3 счетов"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: "Email не подтвержден"
           content:
             application/json:
               schema:
@@ -209,7 +285,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Account"
         "404":
-          description: "Счёт не зарегистрирован в банке"
+          description: "Счёт не зарегистрирован в банке/пользователь не найден"
           content:
             application/json:
               schema:
@@ -241,12 +317,9 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
+                $ref: "#/components/schemas/Message"
         "404":
-          description: "Счёт не найден"
+          description: "Счёт не найден/пользователь не найден"
           content:
             application/json:
               schema:
@@ -284,16 +357,7 @@ paths:
         content:
           application/json:
             schema:
-              required:
-                - "amount"
-                - "to"
-              properties:
-                amount:
-                  type: integer
-                  format: int32
-                to:
-                  type: string
-                  format: uuid
+              $ref: "#/components/schemas/TransferInfo"
       responses:
         "200":
           description: "Успешный перевод"
@@ -302,7 +366,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/User"
         "404": 
-          description: "Счёт не найден"
+          description: "Счёт не найден/пользователь не найден"
           content:
             application/json:
               schema:
@@ -341,23 +405,18 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: "x-machine-token"
+        - name: "x-machine-id"
           in: cookie
           required: true
           schema:
             type: string
+            format: uuid
       requestBody:
         description: "Необходимо указать сумму обналичивания"
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - "amount"
-              properties:
-                amount:
-                  type: integer
-                  format: int32
+              $ref: "#/components/schemas/CashoutRequest"
       responses:
         "200":
           description: "Успешное обналичивание"
@@ -366,7 +425,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
         "404":
-          description: "Счёт не найден"
+          description: "Счёт не найден/пользователь не найден"
           content: 
             application/json:
               schema:
@@ -379,6 +438,12 @@ paths:
                 $ref: "#/components/schemas/Message"
         "409":
           description: "Недостаточно средств"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: "Недостаточно прав"
           content:
             application/json:
               schema:
@@ -410,18 +475,13 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
       requestBody:
         description: "Необходимо указать сколько денег положить на счёт"
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - amount
-              properties:
-                amount:
-                  type: integer
-                  format: int32
+              $ref: "#/components/schemas/DepositRequest"
       responses:
         "200":
           description: "Деньги успешно положены на счёт"
@@ -430,7 +490,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
         "404":
-          description: "Счёт не найден"
+          description: "Счёт не найден/пользователь не найден"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: "Недостаточно прав"
           content:
             application/json:
               schema:
@@ -448,12 +514,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
 components:
-  # securitySchemes:
-  #   BearerAuth:
-  #     type: http
-  #     scheme: bearer
-  #     bearerFormat: JWT
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
+    DepositRequest:
+      type: object
+      required:
+        - "amount"
+      properties:
+        amount:
+          type: integer
+          format: int32
+    CashoutRequest:
+      type: object
+      required:
+        - "amount"
+      properties:
+        amount:
+          type: integer
+          format: int32
     Message:
       type: object
       required:
@@ -471,6 +553,13 @@ components:
           type: string
           format: email
         password:
+          type: string
+    ReturnToken:
+      type: object
+      required:
+        - token
+      properties:
+        token:
           type: string
     User:
       type: object
@@ -508,6 +597,14 @@ components:
         money:  
           type: integer
           format: int32
+    ReturnId:
+      type: object
+      required:
+        - "id"
+      properties:
+        id:
+          type: string
+          format: uuid
     UserWithPassword:
       type: object
       required:
@@ -528,5 +625,17 @@ components:
           format: email
         password:
           type: string
-      
+    TransferInfo: 
+      type: object
+      required:
+      - "amount"
+      - "to"
+      properties:
+        amount:
+          type: integer
+          format: int32
+        to:
+          type: string
+          format: uuid
+        
             

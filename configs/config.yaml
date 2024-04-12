@@ -1,0 +1,20 @@
+app:
+  host: bank
+  port: 8000
+
+db:
+  host: postgresdb
+  port: 5432
+  name: postgres
+  user: postgres
+  sslmode: disable
+
+redis:
+  host: redisdb
+  port: 6379
+  db: 0
+
+tokens:
+  accessTTL: 12h
+  emailTTL: 1h
+  

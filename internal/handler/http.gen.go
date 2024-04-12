@@ -6,9 +6,7 @@ package handler
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,7 +16,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v4"
 	"github.com/oapi-codegen/runtime"
-	strictecho "github.com/oapi-codegen/runtime/strictmiddleware/echo"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -38,9 +35,35 @@ type AuthSchema struct {
 	Password string              `json:"password"`
 }
 
+// CashoutRequest defines model for CashoutRequest.
+type CashoutRequest struct {
+	Amount int32 `json:"amount"`
+}
+
+// DepositRequest defines model for DepositRequest.
+type DepositRequest struct {
+	Amount int32 `json:"amount"`
+}
+
 // Message defines model for Message.
 type Message struct {
 	Message string `json:"message"`
+}
+
+// ReturnId defines model for ReturnId.
+type ReturnId struct {
+	Id openapi_types.UUID `json:"id"`
+}
+
+// ReturnToken defines model for ReturnToken.
+type ReturnToken struct {
+	Token string `json:"token"`
+}
+
+// TransferInfo defines model for TransferInfo.
+type TransferInfo struct {
+	Amount int32              `json:"amount"`
+	To     openapi_types.UUID `json:"to"`
 }
 
 // User defines model for User.
@@ -62,40 +85,29 @@ type UserWithPassword struct {
 	Surname  string              `json:"surname"`
 }
 
-// CashOutJSONBody defines parameters for CashOut.
-type CashOutJSONBody struct {
-	Amount int32 `json:"amount"`
-}
-
 // CashOutParams defines parameters for CashOut.
 type CashOutParams struct {
-	XMachineToken string `form:"x-machine-token" json:"x-machine-token"`
-}
-
-// DepositJSONBody defines parameters for Deposit.
-type DepositJSONBody struct {
-	Amount int32 `json:"amount"`
+	XMachineId openapi_types.UUID `form:"x-machine-id" json:"x-machine-id"`
 }
 
 // DepositParams defines parameters for Deposit.
 type DepositParams struct {
-	XMachineId string `form:"x-machine-id" json:"x-machine-id"`
+	XMachineId openapi_types.UUID `form:"x-machine-id" json:"x-machine-id"`
 }
 
-// TransferJSONBody defines parameters for Transfer.
-type TransferJSONBody struct {
-	Amount int32              `json:"amount"`
-	To     openapi_types.UUID `json:"to"`
+// VerifyEmailParams defines parameters for VerifyEmail.
+type VerifyEmailParams struct {
+	Token string `form:"token" json:"token"`
 }
 
 // CashOutJSONRequestBody defines body for CashOut for application/json ContentType.
-type CashOutJSONRequestBody CashOutJSONBody
+type CashOutJSONRequestBody = CashoutRequest
 
 // DepositJSONRequestBody defines body for Deposit for application/json ContentType.
-type DepositJSONRequestBody DepositJSONBody
+type DepositJSONRequestBody = DepositRequest
 
 // TransferJSONRequestBody defines body for Transfer for application/json ContentType.
-type TransferJSONRequestBody TransferJSONBody
+type TransferJSONRequestBody = TransferInfo
 
 // SignInJSONRequestBody defines body for SignIn for application/json ContentType.
 type SignInJSONRequestBody = AuthSchema
@@ -130,11 +142,17 @@ type ServerInterface interface {
 	// (GET /auth/me)
 	GetMe(ctx echo.Context) error
 
+	// (POST /auth/resend-verify)
+	ResendVerify(ctx echo.Context) error
+
 	// (POST /auth/sign-in)
 	SignIn(ctx echo.Context) error
 
 	// (POST /auth/sign-up)
 	SignUp(ctx echo.Context) error
+
+	// (GET /auth/verify-email)
+	VerifyEmail(ctx echo.Context, params VerifyEmailParams) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -216,17 +234,17 @@ func (w *ServerInterfaceWrapper) CashOut(ctx echo.Context) error {
 	// Parameter object where we will unmarshal all parameters from the context
 	var params CashOutParams
 
-	if cookie, err := ctx.Cookie("x-machine-token"); err == nil {
+	if cookie, err := ctx.Cookie("x-machine-id"); err == nil {
 
-		var value string
-		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-token", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
+		var value openapi_types.UUID
+		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-id", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-token: %s", err))
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-id: %s", err))
 		}
-		params.XMachineToken = value
+		params.XMachineId = value
 
 	} else {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument x-machine-token is required, but not found"))
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Query argument x-machine-id is required, but not found"))
 	}
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -252,7 +270,7 @@ func (w *ServerInterfaceWrapper) Deposit(ctx echo.Context) error {
 
 	if cookie, err := ctx.Cookie("x-machine-id"); err == nil {
 
-		var value string
+		var value openapi_types.UUID
 		err = runtime.BindStyledParameterWithOptions("simple", "x-machine-id", cookie.Value, &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationCookie, Explode: true, Required: true})
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter x-machine-id: %s", err))
@@ -297,6 +315,17 @@ func (w *ServerInterfaceWrapper) GetMe(ctx echo.Context) error {
 	return err
 }
 
+// ResendVerify converts echo context to params.
+func (w *ServerInterfaceWrapper) ResendVerify(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(BearerAuthScopes, []string{"user"})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ResendVerify(ctx)
+	return err
+}
+
 // SignIn converts echo context to params.
 func (w *ServerInterfaceWrapper) SignIn(ctx echo.Context) error {
 	var err error
@@ -312,6 +341,24 @@ func (w *ServerInterfaceWrapper) SignUp(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.SignUp(ctx)
+	return err
+}
+
+// VerifyEmail converts echo context to params.
+func (w *ServerInterfaceWrapper) VerifyEmail(ctx echo.Context) error {
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params VerifyEmailParams
+	// ------------- Required query parameter "token" -------------
+
+	err = runtime.BindQueryParameter("form", true, true, "token", ctx.QueryParams(), &params.Token)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter token: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.VerifyEmail(ctx, params)
 	return err
 }
 
@@ -351,795 +398,49 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.PUT(baseURL+"/api/v1/accounts/:accountId/deposit", wrapper.Deposit)
 	router.PUT(baseURL+"/api/v1/accounts/:accountId/transfer", wrapper.Transfer)
 	router.GET(baseURL+"/auth/me", wrapper.GetMe)
+	router.POST(baseURL+"/auth/resend-verify", wrapper.ResendVerify)
 	router.POST(baseURL+"/auth/sign-in", wrapper.SignIn)
 	router.POST(baseURL+"/auth/sign-up", wrapper.SignUp)
+	router.GET(baseURL+"/auth/verify-email", wrapper.VerifyEmail)
 
-}
-
-type GetAllAccountsRequestObject struct {
-}
-
-type GetAllAccountsResponseObject interface {
-	VisitGetAllAccountsResponse(w http.ResponseWriter) error
-}
-
-type GetAllAccounts200JSONResponse struct {
-	Accounts *[]Account `json:"accounts,omitempty"`
-}
-
-func (response GetAllAccounts200JSONResponse) VisitGetAllAccountsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAllAccounts401JSONResponse Message
-
-func (response GetAllAccounts401JSONResponse) VisitGetAllAccountsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAllAccounts500JSONResponse Message
-
-func (response GetAllAccounts500JSONResponse) VisitGetAllAccountsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountRequestObject struct {
-}
-
-type CreateAccountResponseObject interface {
-	VisitCreateAccountResponse(w http.ResponseWriter) error
-}
-
-type CreateAccount200JSONResponse Account
-
-func (response CreateAccount200JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccount401JSONResponse Message
-
-func (response CreateAccount401JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccount409JSONResponse Message
-
-func (response CreateAccount409JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccount500JSONResponse Message
-
-func (response CreateAccount500JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteAccountRequestObject struct {
-	AccountId openapi_types.UUID `json:"accountId"`
-}
-
-type DeleteAccountResponseObject interface {
-	VisitDeleteAccountResponse(w http.ResponseWriter) error
-}
-
-type DeleteAccount200JSONResponse struct {
-	Status *string `json:"status,omitempty"`
-}
-
-func (response DeleteAccount200JSONResponse) VisitDeleteAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteAccount401JSONResponse Message
-
-func (response DeleteAccount401JSONResponse) VisitDeleteAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteAccount404JSONResponse Message
-
-func (response DeleteAccount404JSONResponse) VisitDeleteAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteAccount500JSONResponse Message
-
-func (response DeleteAccount500JSONResponse) VisitDeleteAccountResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountInfoRequestObject struct {
-	AccountId openapi_types.UUID `json:"accountId"`
-}
-
-type GetAccountInfoResponseObject interface {
-	VisitGetAccountInfoResponse(w http.ResponseWriter) error
-}
-
-type GetAccountInfo200JSONResponse struct {
-	Account Account `json:"account"`
-}
-
-func (response GetAccountInfo200JSONResponse) VisitGetAccountInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountInfo401JSONResponse Account
-
-func (response GetAccountInfo401JSONResponse) VisitGetAccountInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountInfo404JSONResponse Message
-
-func (response GetAccountInfo404JSONResponse) VisitGetAccountInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountInfo500JSONResponse Message
-
-func (response GetAccountInfo500JSONResponse) VisitGetAccountInfoResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CashOutRequestObject struct {
-	AccountId openapi_types.UUID `json:"accountId"`
-	Params    CashOutParams
-	Body      *CashOutJSONRequestBody
-}
-
-type CashOutResponseObject interface {
-	VisitCashOutResponse(w http.ResponseWriter) error
-}
-
-type CashOut200JSONResponse Message
-
-func (response CashOut200JSONResponse) VisitCashOutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CashOut401JSONResponse Message
-
-func (response CashOut401JSONResponse) VisitCashOutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CashOut404JSONResponse Message
-
-func (response CashOut404JSONResponse) VisitCashOutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CashOut409JSONResponse Message
-
-func (response CashOut409JSONResponse) VisitCashOutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CashOut500JSONResponse Message
-
-func (response CashOut500JSONResponse) VisitCashOutResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DepositRequestObject struct {
-	AccountId openapi_types.UUID `json:"accountId"`
-	Params    DepositParams
-	Body      *DepositJSONRequestBody
-}
-
-type DepositResponseObject interface {
-	VisitDepositResponse(w http.ResponseWriter) error
-}
-
-type Deposit200JSONResponse Message
-
-func (response Deposit200JSONResponse) VisitDepositResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Deposit401JSONResponse Message
-
-func (response Deposit401JSONResponse) VisitDepositResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Deposit404JSONResponse Message
-
-func (response Deposit404JSONResponse) VisitDepositResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Deposit500JSONResponse Message
-
-func (response Deposit500JSONResponse) VisitDepositResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type TransferRequestObject struct {
-	AccountId openapi_types.UUID `json:"accountId"`
-	Body      *TransferJSONRequestBody
-}
-
-type TransferResponseObject interface {
-	VisitTransferResponse(w http.ResponseWriter) error
-}
-
-type Transfer200JSONResponse User
-
-func (response Transfer200JSONResponse) VisitTransferResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Transfer401JSONResponse Message
-
-func (response Transfer401JSONResponse) VisitTransferResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Transfer404JSONResponse Message
-
-func (response Transfer404JSONResponse) VisitTransferResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Transfer409JSONResponse Message
-
-func (response Transfer409JSONResponse) VisitTransferResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type Transfer500JSONResponse Message
-
-func (response Transfer500JSONResponse) VisitTransferResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetMeRequestObject struct {
-}
-
-type GetMeResponseObject interface {
-	VisitGetMeResponse(w http.ResponseWriter) error
-}
-
-type GetMe200JSONResponse struct {
-	User User `json:"user"`
-}
-
-func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetMe401JSONResponse Message
-
-func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetMe500JSONResponse Message
-
-func (response GetMe500JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignInRequestObject struct {
-	Body *SignInJSONRequestBody
-}
-
-type SignInResponseObject interface {
-	VisitSignInResponse(w http.ResponseWriter) error
-}
-
-type SignIn200JSONResponse struct {
-	Token string `json:"token"`
-}
-
-func (response SignIn200JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignIn401JSONResponse Message
-
-func (response SignIn401JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignIn500JSONResponse Message
-
-func (response SignIn500JSONResponse) VisitSignInResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignUpRequestObject struct {
-	Body *SignUpJSONRequestBody
-}
-
-type SignUpResponseObject interface {
-	VisitSignUpResponse(w http.ResponseWriter) error
-}
-
-type SignUp200JSONResponse Message
-
-func (response SignUp200JSONResponse) VisitSignUpResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignUp409JSONResponse Message
-
-func (response SignUp409JSONResponse) VisitSignUpResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type SignUp500JSONResponse Message
-
-func (response SignUp500JSONResponse) VisitSignUpResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-// StrictServerInterface represents all server handlers.
-type StrictServerInterface interface {
-
-	// (GET /api/v1/accounts)
-	GetAllAccounts(ctx context.Context, request GetAllAccountsRequestObject) (GetAllAccountsResponseObject, error)
-
-	// (POST /api/v1/accounts)
-	CreateAccount(ctx context.Context, request CreateAccountRequestObject) (CreateAccountResponseObject, error)
-
-	// (DELETE /api/v1/accounts/{accountId})
-	DeleteAccount(ctx context.Context, request DeleteAccountRequestObject) (DeleteAccountResponseObject, error)
-
-	// (GET /api/v1/accounts/{accountId})
-	GetAccountInfo(ctx context.Context, request GetAccountInfoRequestObject) (GetAccountInfoResponseObject, error)
-
-	// (PUT /api/v1/accounts/{accountId}/cashOut)
-	CashOut(ctx context.Context, request CashOutRequestObject) (CashOutResponseObject, error)
-
-	// (PUT /api/v1/accounts/{accountId}/deposit)
-	Deposit(ctx context.Context, request DepositRequestObject) (DepositResponseObject, error)
-
-	// (PUT /api/v1/accounts/{accountId}/transfer)
-	Transfer(ctx context.Context, request TransferRequestObject) (TransferResponseObject, error)
-
-	// (GET /auth/me)
-	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
-
-	// (POST /auth/sign-in)
-	SignIn(ctx context.Context, request SignInRequestObject) (SignInResponseObject, error)
-
-	// (POST /auth/sign-up)
-	SignUp(ctx context.Context, request SignUpRequestObject) (SignUpResponseObject, error)
-}
-
-type StrictHandlerFunc = strictecho.StrictEchoHandlerFunc
-type StrictMiddlewareFunc = strictecho.StrictEchoMiddlewareFunc
-
-func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc) ServerInterface {
-	return &strictHandler{ssi: ssi, middlewares: middlewares}
-}
-
-type strictHandler struct {
-	ssi         StrictServerInterface
-	middlewares []StrictMiddlewareFunc
-}
-
-// GetAllAccounts operation middleware
-func (sh *strictHandler) GetAllAccounts(ctx echo.Context) error {
-	var request GetAllAccountsRequestObject
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetAllAccounts(ctx.Request().Context(), request.(GetAllAccountsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetAllAccounts")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(GetAllAccountsResponseObject); ok {
-		return validResponse.VisitGetAllAccountsResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// CreateAccount operation middleware
-func (sh *strictHandler) CreateAccount(ctx echo.Context) error {
-	var request CreateAccountRequestObject
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateAccount(ctx.Request().Context(), request.(CreateAccountRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateAccount")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(CreateAccountResponseObject); ok {
-		return validResponse.VisitCreateAccountResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// DeleteAccount operation middleware
-func (sh *strictHandler) DeleteAccount(ctx echo.Context, accountId openapi_types.UUID) error {
-	var request DeleteAccountRequestObject
-
-	request.AccountId = accountId
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteAccount(ctx.Request().Context(), request.(DeleteAccountRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteAccount")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(DeleteAccountResponseObject); ok {
-		return validResponse.VisitDeleteAccountResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// GetAccountInfo operation middleware
-func (sh *strictHandler) GetAccountInfo(ctx echo.Context, accountId openapi_types.UUID) error {
-	var request GetAccountInfoRequestObject
-
-	request.AccountId = accountId
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetAccountInfo(ctx.Request().Context(), request.(GetAccountInfoRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetAccountInfo")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(GetAccountInfoResponseObject); ok {
-		return validResponse.VisitGetAccountInfoResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// CashOut operation middleware
-func (sh *strictHandler) CashOut(ctx echo.Context, accountId openapi_types.UUID, params CashOutParams) error {
-	var request CashOutRequestObject
-
-	request.AccountId = accountId
-	request.Params = params
-
-	var body CashOutJSONRequestBody
-	if err := ctx.Bind(&body); err != nil {
-		return err
-	}
-	request.Body = &body
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CashOut(ctx.Request().Context(), request.(CashOutRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CashOut")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(CashOutResponseObject); ok {
-		return validResponse.VisitCashOutResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// Deposit operation middleware
-func (sh *strictHandler) Deposit(ctx echo.Context, accountId openapi_types.UUID, params DepositParams) error {
-	var request DepositRequestObject
-
-	request.AccountId = accountId
-	request.Params = params
-
-	var body DepositJSONRequestBody
-	if err := ctx.Bind(&body); err != nil {
-		return err
-	}
-	request.Body = &body
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.Deposit(ctx.Request().Context(), request.(DepositRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "Deposit")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(DepositResponseObject); ok {
-		return validResponse.VisitDepositResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// Transfer operation middleware
-func (sh *strictHandler) Transfer(ctx echo.Context, accountId openapi_types.UUID) error {
-	var request TransferRequestObject
-
-	request.AccountId = accountId
-
-	var body TransferJSONRequestBody
-	if err := ctx.Bind(&body); err != nil {
-		return err
-	}
-	request.Body = &body
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.Transfer(ctx.Request().Context(), request.(TransferRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "Transfer")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(TransferResponseObject); ok {
-		return validResponse.VisitTransferResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// GetMe operation middleware
-func (sh *strictHandler) GetMe(ctx echo.Context) error {
-	var request GetMeRequestObject
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetMe(ctx.Request().Context(), request.(GetMeRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetMe")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(GetMeResponseObject); ok {
-		return validResponse.VisitGetMeResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// SignIn operation middleware
-func (sh *strictHandler) SignIn(ctx echo.Context) error {
-	var request SignInRequestObject
-
-	var body SignInJSONRequestBody
-	if err := ctx.Bind(&body); err != nil {
-		return err
-	}
-	request.Body = &body
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.SignIn(ctx.Request().Context(), request.(SignInRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "SignIn")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(SignInResponseObject); ok {
-		return validResponse.VisitSignInResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
-}
-
-// SignUp operation middleware
-func (sh *strictHandler) SignUp(ctx echo.Context) error {
-	var request SignUpRequestObject
-
-	var body SignUpJSONRequestBody
-	if err := ctx.Bind(&body); err != nil {
-		return err
-	}
-	request.Body = &body
-
-	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.SignUp(ctx.Request().Context(), request.(SignUpRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "SignUp")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		return err
-	} else if validResponse, ok := response.(SignUpResponseObject); ok {
-		return validResponse.VisitSignUpResponse(ctx.Response())
-	} else if response != nil {
-		return fmt.Errorf("unexpected response type: %T", response)
-	}
-	return nil
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"tlKpsNZm6/8BAAD//9VUwpnANQAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

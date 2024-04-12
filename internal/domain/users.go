@@ -3,13 +3,13 @@ package domain
 import "github.com/google/uuid"
 
 type User struct {
-	Id       uuid.UUID `database:"id"`
-	Surname  string    `database:"surname"`
-	Name     string    `database:"name"`
-	Patronyc string    `database:"patronyc"`
-	Email    string    `database:"email"`
-	Password string    `database:"hash_password"`
-	Verified bool      `database:"verified"`
+	Id       uuid.UUID `db:"id"`
+	Surname  string    `db:"surname"`
+	Name     string    `db:"name"`
+	Patronyc string    `db:"patronyc"`
+	Email    string    `db:"email"`
+	Password string    `db:"hash_password"`
+	Verified bool      `db:"verified"`
 }
 
 type UserUpdate struct {
