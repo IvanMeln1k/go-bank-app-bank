@@ -133,6 +133,13 @@ func main() {
 		logrus.Fatalf("error shutting down server: %s", err)
 	}
 
+	if err := db.Close(); err != nil {
+		logrus.Fatalf("error clode db connect: %s", err)
+	}
+	if err := rdb.Close(); err != nil {
+		logrus.Fatalf("error close redisdb connect: %s", err)
+	}
+
 	logrus.Printf("Server stoped")
 }
 
